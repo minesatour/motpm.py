@@ -91,8 +91,8 @@ def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     
     # Get the base path from ChromeDriverManager
     driver_base_path = ChromeDriverManager().install()
-    # Correct path to the chromedriver binary
-    executable_path = os.path.join(driver_base_path, "chromedriver")
+    # Correct path to the chromedriver binary inside chromedriver-linux64 directory
+    executable_path = os.path.join(driver_base_path, "chromedriver-linux64", "chromedriver")
     if not os.path.exists(executable_path):
         raise FileNotFoundError(f"Chromedriver binary not found at {executable_path}")
     
