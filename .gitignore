@@ -1,0 +1,43 @@
+# Python bytecode and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+myenv/
+*.env
+
+# Dependency directories
+*.egg-info/
+dist/
+build/
+
+# mitmproxy certificate and data files
+~/.mitmproxy/
+mitmproxy-ca-cert.pem
+
+# SQLite database
+otps.db
+
+# Logs
+otp_interception.log
+
+# Chromedriver binaries (downloaded by webdriver-manager)
+chromedriver
+chromedriver.exe
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+
+# Misc
+*.bak
+*.tmp
