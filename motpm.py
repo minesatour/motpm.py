@@ -57,9 +57,11 @@ def init_db():
 def random_user_agent() -> str:
     return random.choice(USER_AGENTS)
 
+# Check mitmproxy CA certificate (simplified to just check existence)
 def ensure_mitmproxy_ca_installed():
     return os.path.exists(MITMPROXY_CA_PATH)
 
+# Guide for CA installation (kept for reference, but won’t trigger with simplified check)
 def guide_ca_installation():
     instructions = (
         "mitmproxy CA certificate is not installed or trusted. Follow these steps:\n\n"
@@ -127,7 +129,6 @@ class OTPInterceptor:
     def intercept_otp(self, flow: mitmproxy.http.HTTPFlow) -> Optional[str]:
         url = flow.request.url.lower()
         headers = str(flow.request.headers).lower()
-        # Check URL or headers for OTP context
         if any(keyword in url or keyword in headers for keyword in self.otp_keywords):
             parsed_url = urlparse(url)
             query_params = parse_qs(parsed_url.query)
@@ -144,27 +145,6 @@ class OTPInterceptor:
         return None
 
     def extract_otp_from_content(self, content: str) -> Optional[str]:
-        # Require OTP keyword within 50 characters of the code for context
-        for keyword in self.otp_keywords:
-            keyword_pos = content.find(keyword)
-            if keyword_pos != -1:
-                nearby_content = content[max(0, keyword_pos - 50):keyword_pos + 50]
-                match = self.otp_pattern.search(nearby_content)
-                if match:
-                    otp = match.group(1)
-                    logging.info(f"Extracted OTP from content: {otp}")
-                    return otp
-        return None
-
-    def store_otp(self, otp: str, source_url: str, site: str):
-        conn = sqlite3.connect(DATABASE)
-        c = conn.cursor()
-        c.execute("INSERT INTO otps (timestamp, otp, source_url, site) VALUES (datetime('now'), ?, ?, ?)",
-                  (otp, source_url, site))
-        conn.commit()
-        conn.close()
-    def extract_otp_from_content(self, content: str) -> Optional[str]:
-        # Require OTP keyword within 50 characters of the code for context
         for keyword in self.otp_keywords:
             keyword_pos = content.find(keyword)
             if keyword_pos != -1:
@@ -256,7 +236,7 @@ class OTPInterceptorGUI:
         threading.Thread(target=self.run_script, args=(url,), daemon=True).start()
 
     def run_script(self, url):
-        self.driver = setup_browser(headless=False)
+        self.driver = setup_browser(proxy=True)  # Explicitly enable proxy
         self.log(f"Opening {url} in browser. Please enter your email, password, and request the OTP manually.")
         self.driver.get(url)
         
@@ -268,7 +248,7 @@ class OTPInterceptorGUI:
             self.log("No OTP captured within timeout. Check your actions or try again.")
         
         self.log("You can now interact with the account.")
-        self.root.mainloop()
+        # Note: Removed self.root.mainloop() here to avoid nested event loops
 
 # Main
 if __name__ == "__main__":
