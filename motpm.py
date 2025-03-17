@@ -89,9 +89,9 @@ def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--ignore-certificate-errors")
     
-    # Get the base path from ChromeDriverManager and fix path to chromedriver binary
+    # Get the base path from ChromeDriverManager
     driver_base_path = ChromeDriverManager().install()
-    # Correct path is inside the 'chromedriver-linux64' directory
+    # Correct path to the chromedriver binary
     executable_path = os.path.join(driver_base_path, "chromedriver")
     if not os.path.exists(executable_path):
         raise FileNotFoundError(f"Chromedriver binary not found at {executable_path}")
