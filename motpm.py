@@ -22,7 +22,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 
-# Configure logging
+# Configure logging to both file and terminal
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -57,7 +57,7 @@ def init_db():
 def random_user_agent() -> str:
     return random.choice(USER_AGENTS)
 
-# Check mitmproxy CA certificate (simplified)
+# Check mitmproxy CA certificate
 def ensure_mitmproxy_ca_installed():
     return os.path.exists(MITMPROXY_CA_PATH)
 
@@ -76,7 +76,7 @@ def guide_ca_installation():
     messagebox.showwarning("CA Certificate Required", instructions)
     return False
 
-# Setup WebDriver with corrected ChromeDriver path
+# Setup WebDriver with corrected ChromeDriver path and workaround
 def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     chrome_options = Options()
     if proxy:
@@ -89,16 +89,32 @@ def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--ignore-certificate-errors")
     
-    # Get the base path from ChromeDriverManager with debug logging
+    # Get the base path from ChromeDriverManager
     driver_base_path = ChromeDriverManager().install()
-    logging.info(f"ChromeDriver base path: {driver_base_path}")
+    logging.info(f"ChromeDriverManager returned base path: {driver_base_path}")
+    
     # Correct path to the chromedriver binary
-    executable_path = os.path.join(driver_base_path, "chromedriver-linux64", "chromedriver")
-    logging.info(f"Attempting to use ChromeDriver at: {executable_path}")
+    expected_base_path = os.path.join(os.path.expanduser("~"), ".wdm", "drivers", "chromedriver", "linux64", "134.0.6998.88", "chromedriver-linux64")
+    executable_path = os.path.join(expected_base_path, "chromedriver")
     
+    # If the base path from ChromeDriverManager is wrong, override it
+    if "THIRD_PARTY_NOTICES" in driver_base_path:
+        logging.warning(f"ChromeDriverManager returned incorrect path: {driver_base_path}. Using expected path: {expected_base_path}")
+        driver_base_path = expected_base_path
+    
+    executable_path = os.path.join(driver_base_path, "chromedriver")
+    logging.info(f"Constructed executable path: {executable_path}")
+    
+    # Check if the path exists and is executable
     if not os.path.exists(executable_path):
+        logging.error(f"File does not exist at: {executable_path}")
         raise FileNotFoundError(f"Chromedriver binary not found at {executable_path}")
+    if not os.access(executable_path, os.X_OK):
+        logging.warning(f"File at {executable_path} is not executable, attempting to fix permissions")
+        os.chmod(executable_path, 0o755)
+        logging.info(f"Permissions updated for {executable_path}")
     
+    logging.info(f"Using ChromeDriver at: {executable_path}")
     service = Service(executable_path=executable_path)
     driver = webdriver.Chrome(service=service, options=chrome_options)
     
