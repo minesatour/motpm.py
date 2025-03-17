@@ -107,14 +107,13 @@ class OTPInterceptor:
     def __init__(self, otp_queue: queue.Queue, gui):
         self.otp_queue = otp_queue
         self.gui = gui
-        # Strict keywords for OTP context
         self.otp_keywords = ["otp", "verification_code", "auth_code", "2fa_code", "token", "passcode", "mfa"]
         self.otp_pattern = re.compile(r"(?:\b|\D)(\d{4,8})(?:\b|\D)")  # 4-8 digits, stricter boundaries
         self.otp_captured = False
 
     def request(self, flow: mitmproxy.http.HTTPFlow):
         if not self.otp_captured:
-            otp = self.intercept_otp(flow.request)
+            otp = self.intercept_otp(flow)
             if otp:
                 self.store_otp(otp, flow.request.url, flow.request.host)
                 self.otp_queue.put(otp)
@@ -133,9 +132,9 @@ class OTPInterceptor:
                 self.gui.display_otp(otp)
                 self.otp_captured = True
 
-    def intercept_otp(self, request: mitmproxy.http.HTTPRequest) -> Optional[str]:
-        url = request.url.lower()
-        headers = str(request.headers).lower()
+    def intercept_otp(self, flow: mitmproxy.http.HTTPFlow) -> Optional[str]:
+        url = flow.request.url.lower()
+        headers = str(flow.request.headers).lower()
         # Check URL or headers for OTP context
         if any(keyword in url or keyword in headers for keyword in self.otp_keywords):
             parsed_url = urlparse(url)
@@ -146,12 +145,32 @@ class OTPInterceptor:
                     if self.otp_pattern.match(otp):
                         logging.info(f"Intercepted OTP from URL: {otp}")
                         return otp
-        if request.content:
-            content = request.content.decode("utf-8", errors="ignore").lower()
+        if flow.request.content:
+            content = flow.request.content.decode("utf-8", errors="ignore").lower()
             if any(keyword in content for keyword in self.otp_keywords):
                 return self.extract_otp_from_content(content)
         return None
 
+    def extract_otp_from_content(self, content: str) -> Optional[str]:
+        # Require OTP keyword within 50 characters of the code for context
+        for keyword in self.otp_keywords:
+            keyword_pos = content.find(keyword)
+            if keyword_pos != -1:
+                nearby_content = content[max(0, keyword_pos - 50):keyword_pos + 50]
+                match = self.otp_pattern.search(nearby_content)
+                if match:
+                    otp = match.group(1)
+                    logging.info(f"Extracted OTP from content: {otp}")
+                    return otp
+        return None
+
+    def store_otp(self, otp: str, source_url: str, site: str):
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+        c.execute("INSERT INTO otps (timestamp, otp, source_url, site) VALUES (datetime('now'), ?, ?, ?)",
+                  (otp, source_url, site))
+        conn.commit()
+        conn.close()
     def extract_otp_from_content(self, content: str) -> Optional[str]:
         # Require OTP keyword within 50 characters of the code for context
         for keyword in self.otp_keywords:
