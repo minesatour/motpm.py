@@ -76,7 +76,7 @@ def guide_ca_installation():
     messagebox.showwarning("CA Certificate Required", instructions)
     return False
 
-# Setup WebDriver with corrected ChromeDriver path and workaround
+# Setup WebDriver with corrected ChromeDriver path
 def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     chrome_options = Options()
     if proxy:
@@ -89,15 +89,12 @@ def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--ignore-certificate-errors")
     
-    # Get the base path from ChromeDriverManager
     driver_base_path = ChromeDriverManager().install()
     logging.info(f"ChromeDriverManager returned base path: {driver_base_path}")
     
-    # Correct path to the chromedriver binary
     expected_base_path = os.path.join(os.path.expanduser("~"), ".wdm", "drivers", "chromedriver", "linux64", "134.0.6998.88", "chromedriver-linux64")
     executable_path = os.path.join(expected_base_path, "chromedriver")
     
-    # If the base path from ChromeDriverManager is wrong, override it
     if "THIRD_PARTY_NOTICES" in driver_base_path:
         logging.warning(f"ChromeDriverManager returned incorrect path: {driver_base_path}. Using expected path: {expected_base_path}")
         driver_base_path = expected_base_path
@@ -105,7 +102,6 @@ def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     executable_path = os.path.join(driver_base_path, "chromedriver")
     logging.info(f"Constructed executable path: {executable_path}")
     
-    # Check if the path exists and is executable
     if not os.path.exists(executable_path):
         logging.error(f"File does not exist at: {executable_path}")
         raise FileNotFoundError(f"Chromedriver binary not found at {executable_path}")
@@ -124,15 +120,22 @@ def setup_browser(proxy: bool = True) -> webdriver.Chrome:
 
 # OTP Interceptor with refined capture logic
 class OTPInterceptor:
-    def __init__(self, otp_queue: queue.Queue, gui):
+    def __init__(self, otp_queue: queue.Queue, gui, site: str):
         self.otp_queue = otp_queue
         self.gui = gui
+        self.site = site.lower()
         self.otp_keywords = ["otp", "verification_code", "auth_code", "2fa_code", "token", "passcode", "mfa"]
-        self.otp_pattern = re.compile(r"(?:\b|\D)(\d{4,8})(?:\b|\D)")  # 4-8 digits, stricter boundaries
         self.otp_captured = False
+        self.capture_active = False  # Only capture after user activates
+        self.otp_length = 6 if "paypal" in self.site else 6  # Default to 6, adjust per site
+        self.otp_pattern = re.compile(fr"(?:\b|\D)(\d{{{self.otp_length}}})(?:\b|\D)")  # Site-specific length
+
+    def start_capture(self):
+        self.capture_active = True
+        self.gui.log("OTP capture activated. Waiting for OTP...")
 
     def request(self, flow: mitmproxy.http.HTTPFlow):
-        if not self.otp_captured:
+        if self.capture_active and not self.otp_captured:
             otp = self.intercept_otp(flow)
             if otp:
                 self.store_otp(otp, flow.request.url, flow.request.host)
@@ -142,7 +145,7 @@ class OTPInterceptor:
                 self.otp_captured = True
 
     def response(self, flow: mitmproxy.http.HTTPFlow):
-        if not self.otp_captured and flow.response.content:
+        if self.capture_active and not self.otp_captured and flow.response.content:
             content = flow.response.content.decode("utf-8", errors="ignore").lower()
             otp = self.extract_otp_from_content(content)
             if otp:
@@ -191,11 +194,11 @@ class OTPInterceptor:
         conn.close()
 
 # Run mitmproxy
-def run_mitmproxy(otp_queue: queue.Queue, gui):
+def run_mitmproxy(otp_queue: queue.Queue, gui, site: str):
     async def run():
         opts = options.Options(listen_host=PROXY_HOST, listen_port=PROXY_PORT)
         master = DumpMaster(opts, with_dumper=False)
-        master.addons.add(OTPInterceptor(otp_queue, gui))
+        master.addons.add(OTPInterceptor(otp_queue, gui, site))
         await master.run()
     
     threading.Thread(target=lambda: asyncio.run(run()), daemon=True).start()
@@ -210,6 +213,7 @@ class OTPInterceptorGUI:
         self.root.resizable(True, True)
         self.otp_queue = queue.Queue()
         self.driver = None
+        self.interceptor = None
         
         # Style configuration
         style = ttk.Style()
@@ -232,20 +236,23 @@ class OTPInterceptorGUI:
         self.start_button = ttk.Button(button_frame, text="Start", command=self.start_interception)
         self.start_button.grid(row=0, column=0, padx=5)
         
+        self.request_otp_button = ttk.Button(button_frame, text="Request OTP", command=self.activate_otp_capture, state="disabled")
+        self.request_otp_button.grid(row=0, column=1, padx=5)
+        
         self.clear_button = ttk.Button(button_frame, text="Clear Log", command=self.clear_log)
-        self.clear_button.grid(row=0, column=1, padx=5)
+        self.clear_button.grid(row=0, column=2, padx=5)
         
         self.quit_button = ttk.Button(button_frame, text="Quit", command=self.quit_app)
-        self.quit_button.grid(row=0, column=2, padx=5)
+        self.quit_button.grid(row=0, column=3, padx=5)
         
         # Log display with label
         ttk.Label(main_frame, text="Activity Log:").grid(row=2, column=0, sticky=tk.W, pady=(5, 0))
         self.log_text = scrolledtext.ScrolledText(main_frame, width=70, height=20, wrap=tk.WORD, font=("Courier", 10))
-        self.log_text.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        self.log_text.grid(row=3, column=0, columnspan=4, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         
         # OTP display with styled label
         self.otp_frame = ttk.LabelFrame(main_frame, text="Captured OTP", padding="5")
-        self.otp_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        self.otp_frame.grid(row=4, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=10)
         
         self.otp_label = ttk.Label(self.otp_frame, text="Waiting...", font=("Helvetica", 12, "bold"))
         self.otp_label.grid(row=0, column=0, sticky=tk.W)
@@ -272,6 +279,11 @@ class OTPInterceptorGUI:
             self.driver.quit()
         self.root.quit()
 
+    def activate_otp_capture(self):
+        if self.interceptor:
+            self.interceptor.start_capture()
+            self.request_otp_button.config(state="disabled")
+
     def start_interception(self):
         url = self.url_entry.get().strip()
         
@@ -290,8 +302,10 @@ class OTPInterceptorGUI:
                 return
         
         self.start_button.config(state="disabled")
+        self.request_otp_button.config(state="normal")
         init_db()
-        run_mitmproxy(self.otp_queue, self)
+        run_mitmproxy(self.otp_queue, self, url)
+        self.interceptor = OTPInterceptor(self.otp_queue, self, url)
         self.log("Starting OTP interception...")
         
         threading.Thread(target=self.run_script, args=(url,), daemon=True).start()
@@ -314,6 +328,7 @@ class OTPInterceptorGUI:
             self.log(f"Error: {str(e)}")
         finally:
             self.start_button.config(state="normal")
+            self.request_otp_button.config(state="disabled")
 
 # Main
 if __name__ == "__main__":
