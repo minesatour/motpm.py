@@ -57,16 +57,8 @@ def init_db():
 def random_user_agent() -> str:
     return random.choice(USER_AGENTS)
 
-# Check and guide for mitmproxy CA certificate
 def ensure_mitmproxy_ca_installed():
-    if not os.path.exists(MITMPROXY_CA_PATH):
-        return False
-    # Check if CA is in system trust store (simplified check)
-    with open(certifi.where(), "r") as f:
-        system_certs = f.read()
-    with open(MITMPROXY_CA_PATH, "r") as f:
-        mitm_ca = f.read()
-    return mitm_ca in system_certs
+    return os.path.exists(MITMPROXY_CA_PATH)
 
 def guide_ca_installation():
     instructions = (
