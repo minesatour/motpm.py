@@ -26,7 +26,7 @@ from tkinter import ttk, scrolledtext, messagebox
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("otp_interception.log")]
+    handlers=[logging.FileHandler("otp_interception.log"), logging.StreamHandler()]
 )
 
 # Constants
@@ -89,10 +89,13 @@ def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--ignore-certificate-errors")
     
-    # Get the base path from ChromeDriverManager
+    # Get the base path from ChromeDriverManager with debug logging
     driver_base_path = ChromeDriverManager().install()
-    # Correct path to the chromedriver binary inside chromedriver-linux64 directory
+    logging.info(f"ChromeDriver base path: {driver_base_path}")
+    # Correct path to the chromedriver binary
     executable_path = os.path.join(driver_base_path, "chromedriver-linux64", "chromedriver")
+    logging.info(f"Attempting to use ChromeDriver at: {executable_path}")
+    
     if not os.path.exists(executable_path):
         raise FileNotFoundError(f"Chromedriver binary not found at {executable_path}")
     
