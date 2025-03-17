@@ -33,8 +33,7 @@ logging.basicConfig(
 PROXY_HOST = "127.0.0.1"
 PROXY_PORT = 8080
 DATABASE = "otps.db"
-TIMEOUT = 60
-MITMPROXY_CA_PATH = os.path.expanduser("~/.mitmproxy/mitmproxy-ca-cert.pem")
+TIMEOUT = 120  # Increased to 2 minutes as a reasonable default
 
 # User-Agent list
 USER_AGENTS = [
@@ -59,7 +58,7 @@ def random_user_agent() -> str:
 
 # Check mitmproxy CA certificate
 def ensure_mitmproxy_ca_installed():
-    return os.path.exists(MITMPROXY_CA_PATH)
+    return os.path.exists(os.path.expanduser("~/.mitmproxy/mitmproxy-ca-cert.pem"))
 
 # Guide for CA installation
 def guide_ca_installation():
@@ -93,8 +92,6 @@ def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     logging.info(f"ChromeDriverManager returned base path: {driver_base_path}")
     
     expected_base_path = os.path.join(os.path.expanduser("~"), ".wdm", "drivers", "chromedriver", "linux64", "134.0.6998.88", "chromedriver-linux64")
-    executable_path = os.path.join(expected_base_path, "chromedriver")
-    
     if "THIRD_PARTY_NOTICES" in driver_base_path:
         logging.warning(f"ChromeDriverManager returned incorrect path: {driver_base_path}. Using expected path: {expected_base_path}")
         driver_base_path = expected_base_path
@@ -126,9 +123,9 @@ class OTPInterceptor:
         self.site = site.lower()
         self.otp_keywords = ["otp", "verification_code", "auth_code", "2fa_code", "token", "passcode", "mfa"]
         self.otp_captured = False
-        self.capture_active = False  # Only capture after user activates
+        self.capture_active = False
         self.otp_length = 6 if "paypal" in self.site else 6  # Default to 6, adjust per site
-        self.otp_pattern = re.compile(fr"(?:\b|\D)(\d{{{self.otp_length}}})(?:\b|\D)")  # Site-specific length
+        self.otp_pattern = re.compile(fr"(?:\b|\D)(\d{{{self.otp_length}}})(?:\b|\D)")
 
     def start_capture(self):
         self.capture_active = True
@@ -283,6 +280,7 @@ class OTPInterceptorGUI:
         if self.interceptor:
             self.interceptor.start_capture()
             self.request_otp_button.config(state="disabled")
+            threading.Thread(target=self.wait_for_otp, daemon=True).start()
 
     def start_interception(self):
         url = self.url_entry.get().strip()
@@ -296,7 +294,6 @@ class OTPInterceptorGUI:
             self.url_entry.delete(0, tk.END)
             self.url_entry.insert(0, url)
         
-        # Check mitmproxy CA
         if not ensure_mitmproxy_ca_installed():
             if not guide_ca_installation():
                 return
@@ -315,17 +312,19 @@ class OTPInterceptorGUI:
             self.driver = setup_browser(proxy=True)
             self.log(f"Opening {url} in browser. Please enter your email, password, and request the OTP manually.")
             self.driver.get(url)
-            
-            self.log(f"Waiting for OTP... (up to {TIMEOUT} seconds)")
-            try:
-                otp = self.otp_queue.get(timeout=TIMEOUT)
-                self.log(f"OTP captured: {otp}. Enter it manually in the browser.")
-            except queue.Empty:
-                self.log("No OTP captured within timeout. Check your actions or try again.")
-            
-            self.log("You can now interact with the account.")
         except Exception as e:
             self.log(f"Error: {str(e)}")
+            self.start_button.config(state="normal")
+            self.request_otp_button.config(state="disabled")
+
+    def wait_for_otp(self):
+        try:
+            self.log(f"Waiting for OTP... (up to {TIMEOUT} seconds)")
+            otp = self.otp_queue.get(timeout=TIMEOUT)
+            self.log(f"OTP captured: {otp}. Enter it manually in the browser.")
+            self.log("You can now interact with the account.")
+        except queue.Empty:
+            self.log("No OTP captured within timeout. Check your actions or try again.")
         finally:
             self.start_button.config(state="normal")
             self.request_otp_button.config(state="disabled")
