@@ -61,7 +61,7 @@ def random_user_agent() -> str:
 def ensure_mitmproxy_ca_installed():
     return os.path.exists(MITMPROXY_CA_PATH)
 
-# Guide for CA installation (kept for reference)
+# Guide for CA installation
 def guide_ca_installation():
     instructions = (
         "mitmproxy CA certificate is not installed or trusted. Follow these steps:\n\n"
@@ -89,9 +89,10 @@ def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--ignore-certificate-errors")
     
-    # Get the base path from ChromeDriverManager and adjust for modern structure
-    driver_path = ChromeDriverManager().install()
-    executable_path = os.path.join(driver_path, "chromedriver")
+    # Get the base path from ChromeDriverManager and fix path to chromedriver binary
+    driver_base_path = ChromeDriverManager().install()
+    # Correct path is inside the 'chromedriver-linux64' directory
+    executable_path = os.path.join(driver_base_path, "chromedriver")
     if not os.path.exists(executable_path):
         raise FileNotFoundError(f"Chromedriver binary not found at {executable_path}")
     
@@ -181,60 +182,95 @@ def run_mitmproxy(otp_queue: queue.Queue, gui):
     threading.Thread(target=lambda: asyncio.run(run()), daemon=True).start()
     time.sleep(2)
 
-# GUI Class
+# Enhanced GUI Class
 class OTPInterceptorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("OTP Interceptor")
-        self.root.geometry("600x450")
+        self.root.geometry("700x500")
+        self.root.resizable(True, True)
         self.otp_queue = queue.Queue()
         self.driver = None
         
-        # Main frame
+        # Style configuration
+        style = ttk.Style()
+        style.configure("TButton", font=("Helvetica", 10))
+        style.configure("TLabel", font=("Helvetica", 10))
+        
+        # Main frame with padding
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Input field
-        ttk.Label(main_frame, text="Website URL:").grid(row=0, column=0, sticky=tk.W)
-        self.url_entry = ttk.Entry(main_frame, width=50)
-        self.url_entry.grid(row=0, column=1, sticky=(tk.W, tk.E))
+        # URL input section
+        ttk.Label(main_frame, text="Enter Website URL:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.url_entry = ttk.Entry(main_frame, width=60)
+        self.url_entry.grid(row=0, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
-        # Start button
-        ttk.Button(main_frame, text="Start", command=self.start_interception).grid(row=1, column=0, columnspan=2, pady=10)
+        # Buttons frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=1, column=0, columnspan=3, pady=10)
         
-        # Log display
-        self.log_text = scrolledtext.ScrolledText(main_frame, width=60, height=20, wrap=tk.WORD)
-        self.log_text.grid(row=2, column=0, columnspan=2, pady=10)
+        self.start_button = ttk.Button(button_frame, text="Start", command=self.start_interception)
+        self.start_button.grid(row=0, column=0, padx=5)
         
-        # OTP display
-        ttk.Label(main_frame, text="Captured OTP:").grid(row=3, column=0, sticky=tk.W)
-        self.otp_label = ttk.Label(main_frame, text="Waiting...")
-        self.otp_label.grid(row=3, column=1, sticky=tk.W)
+        self.clear_button = ttk.Button(button_frame, text="Clear Log", command=self.clear_log)
+        self.clear_button.grid(row=0, column=1, padx=5)
         
-        # Configure grid weights
-        main_frame.columnconfigure(1, weight=1)
+        self.quit_button = ttk.Button(button_frame, text="Quit", command=self.quit_app)
+        self.quit_button.grid(row=0, column=2, padx=5)
+        
+        # Log display with label
+        ttk.Label(main_frame, text="Activity Log:").grid(row=2, column=0, sticky=tk.W, pady=(5, 0))
+        self.log_text = scrolledtext.ScrolledText(main_frame, width=70, height=20, wrap=tk.WORD, font=("Courier", 10))
+        self.log_text.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        
+        # OTP display with styled label
+        self.otp_frame = ttk.LabelFrame(main_frame, text="Captured OTP", padding="5")
+        self.otp_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        
+        self.otp_label = ttk.Label(self.otp_frame, text="Waiting...", font=("Helvetica", 12, "bold"))
+        self.otp_label.grid(row=0, column=0, sticky=tk.W)
+        
+        # Configure grid weights for resizing
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(3, weight=1)
 
     def log(self, message):
-        self.log_text.insert(tk.END, f"{message}\n")
+        self.log_text.insert(tk.END, f"{time.strftime('%H:%M:%S')} - {message}\n")
         self.log_text.see(tk.END)
 
     def display_otp(self, otp):
-        self.otp_label.config(text=otp)
+        self.otp_label.config(text=otp, foreground="green")
+
+    def clear_log(self):
+        self.log_text.delete(1.0, tk.END)
+        self.log("Log cleared.")
+
+    def quit_app(self):
+        if self.driver:
+            self.driver.quit()
+        self.root.quit()
 
     def start_interception(self):
-        url = self.url_entry.get()
+        url = self.url_entry.get().strip()
         
         if not url:
-            messagebox.showerror("Error", "Website URL must be filled.")
+            messagebox.showerror("Error", "Please enter a website URL.")
             return
+        
+        if not url.startswith("http://") and not url.startswith("https://"):
+            url = "https://" + url
+            self.url_entry.delete(0, tk.END)
+            self.url_entry.insert(0, url)
         
         # Check mitmproxy CA
         if not ensure_mitmproxy_ca_installed():
             if not guide_ca_installation():
                 return
         
+        self.start_button.config(state="disabled")
         init_db()
         run_mitmproxy(self.otp_queue, self)
         self.log("Starting OTP interception...")
@@ -242,18 +278,23 @@ class OTPInterceptorGUI:
         threading.Thread(target=self.run_script, args=(url,), daemon=True).start()
 
     def run_script(self, url):
-        self.driver = setup_browser(proxy=True)
-        self.log(f"Opening {url} in browser. Please enter your email, password, and request the OTP manually.")
-        self.driver.get(url)
-        
-        self.log(f"Waiting for OTP... (up to {TIMEOUT} seconds)")
         try:
-            otp = self.otp_queue.get(timeout=TIMEOUT)
-            self.log(f"OTP captured: {otp}. Enter it manually in the browser.")
-        except queue.Empty:
-            self.log("No OTP captured within timeout. Check your actions or try again.")
-        
-        self.log("You can now interact with the account.")
+            self.driver = setup_browser(proxy=True)
+            self.log(f"Opening {url} in browser. Please enter your email, password, and request the OTP manually.")
+            self.driver.get(url)
+            
+            self.log(f"Waiting for OTP... (up to {TIMEOUT} seconds)")
+            try:
+                otp = self.otp_queue.get(timeout=TIMEOUT)
+                self.log(f"OTP captured: {otp}. Enter it manually in the browser.")
+            except queue.Empty:
+                self.log("No OTP captured within timeout. Check your actions or try again.")
+            
+            self.log("You can now interact with the account.")
+        except Exception as e:
+            self.log(f"Error: {str(e)}")
+        finally:
+            self.start_button.config(state="normal")
 
 # Main
 if __name__ == "__main__":
