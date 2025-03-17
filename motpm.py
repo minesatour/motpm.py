@@ -103,7 +103,7 @@ def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     return driver
 
 # OTP Interceptor with refined capture logic
-def OTPInterceptor():
+class OTPInterceptor:
     def __init__(self, otp_queue: queue.Queue, gui):
         self.otp_queue = otp_queue
         self.gui = gui
@@ -182,7 +182,7 @@ def run_mitmproxy(otp_queue: queue.Queue, gui):
     time.sleep(2)
 
 # GUI Class
-def OTPInterceptorGUI():
+class OTPInterceptorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("OTP Interceptor")
