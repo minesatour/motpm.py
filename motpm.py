@@ -57,11 +57,11 @@ def init_db():
 def random_user_agent() -> str:
     return random.choice(USER_AGENTS)
 
-# Check mitmproxy CA certificate (simplified to just check existence)
+# Check mitmproxy CA certificate (simplified)
 def ensure_mitmproxy_ca_installed():
     return os.path.exists(MITMPROXY_CA_PATH)
 
-# Guide for CA installation (kept for reference, but won’t trigger with simplified check)
+# Guide for CA installation (kept for reference)
 def guide_ca_installation():
     instructions = (
         "mitmproxy CA certificate is not installed or trusted. Follow these steps:\n\n"
@@ -73,7 +73,11 @@ def guide_ca_installation():
         "   - Linux: Copy to /usr/local/share/ca-certificates/, run 'sudo update-ca-certificates'.\n"
         "4. Restart your browser and rerun this script."
     )
-  def setup_browser(proxy: bool = True) -> webdriver.Chrome:
+    messagebox.showwarning("CA Certificate Required", instructions)
+    return False
+
+# Setup WebDriver with corrected ChromeDriver path
+def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     chrome_options = Options()
     if proxy:
         chrome_options.add_argument(f"--proxy-server={PROXY_HOST}:{PROXY_PORT}")
@@ -85,9 +89,8 @@ def guide_ca_installation():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--ignore-certificate-errors")
     
-    # Get the base path from ChromeDriverManager
+    # Get the base path from ChromeDriverManager and adjust for modern structure
     driver_path = ChromeDriverManager().install()
-    # Adjust for modern ChromeDriver structure
     executable_path = os.path.join(driver_path, "chromedriver")
     if not os.path.exists(executable_path):
         raise FileNotFoundError(f"Chromedriver binary not found at {executable_path}")
@@ -98,13 +101,9 @@ def guide_ca_installation():
     stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32",
             webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
     return driver
-    
-    stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32",
-            webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
-    return driver
 
 # OTP Interceptor with refined capture logic
-class OTPInterceptor:
+def OTPInterceptor():
     def __init__(self, otp_queue: queue.Queue, gui):
         self.otp_queue = otp_queue
         self.gui = gui
@@ -183,7 +182,7 @@ def run_mitmproxy(otp_queue: queue.Queue, gui):
     time.sleep(2)
 
 # GUI Class
-class OTPInterceptorGUI:
+def OTPInterceptorGUI():
     def __init__(self, root):
         self.root = root
         self.root.title("OTP Interceptor")
@@ -243,7 +242,7 @@ class OTPInterceptorGUI:
         threading.Thread(target=self.run_script, args=(url,), daemon=True).start()
 
     def run_script(self, url):
-        self.driver = setup_browser(proxy=True)  # Explicitly enable proxy
+        self.driver = setup_browser(proxy=True)
         self.log(f"Opening {url} in browser. Please enter your email, password, and request the OTP manually.")
         self.driver.get(url)
         
@@ -255,7 +254,6 @@ class OTPInterceptorGUI:
             self.log("No OTP captured within timeout. Check your actions or try again.")
         
         self.log("You can now interact with the account.")
-        # Note: Removed self.root.mainloop() here to avoid nested event loops
 
 # Main
 if __name__ == "__main__":
