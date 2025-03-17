@@ -73,11 +73,7 @@ def guide_ca_installation():
         "   - Linux: Copy to /usr/local/share/ca-certificates/, run 'sudo update-ca-certificates'.\n"
         "4. Restart your browser and rerun this script."
     )
-    messagebox.showwarning("CA Certificate Required", instructions)
-    return False
-
-# Setup WebDriver
-def setup_browser(proxy: bool = True) -> webdriver.Chrome:
+  def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     chrome_options = Options()
     if proxy:
         chrome_options.add_argument(f"--proxy-server={PROXY_HOST}:{PROXY_PORT}")
@@ -89,8 +85,19 @@ def setup_browser(proxy: bool = True) -> webdriver.Chrome:
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--ignore-certificate-errors")
     
-    service = Service(ChromeDriverManager().install())
+    # Get the base path from ChromeDriverManager
+    driver_path = ChromeDriverManager().install()
+    # Adjust for modern ChromeDriver structure
+    executable_path = os.path.join(driver_path, "chromedriver")
+    if not os.path.exists(executable_path):
+        raise FileNotFoundError(f"Chromedriver binary not found at {executable_path}")
+    
+    service = Service(executable_path=executable_path)
     driver = webdriver.Chrome(service=service, options=chrome_options)
+    
+    stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32",
+            webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
+    return driver
     
     stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32",
             webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
